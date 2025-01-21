@@ -1,0 +1,33 @@
+server:
+  port: 8082
+spring:
+  application:
+    name: books-service
+  cloud:
+    config:
+      discovery:
+        enabled: true
+        service-id: config-server
+    consul:
+      host: localhost
+      port: 8500
+      discovery:
+        enabled: true
+  config:
+    import: 'optional:configserver:'
+resilience4j:
+  circuit-breaker:
+    instances:
+      bookService:
+        registerHealthIndicator: true
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10000
+        permittedNumberOfCallsInHalfOpenState: 3
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+
