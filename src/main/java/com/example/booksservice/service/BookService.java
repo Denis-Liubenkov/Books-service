@@ -1,10 +1,15 @@
 package com.example.booksservice.service;
 
+import com.example.booksservice.client.AuthenticationServiceClient;
 import com.example.booksservice.client.UserServiceClient;
 import com.example.booksservice.domain.Book;
+import com.example.booksservice.domain.File;
 import com.example.booksservice.domain.User;
+import com.example.booksservice.exceptions.BookNotFoundException;
 import com.example.booksservice.exceptions.ImageNotFoundException;
+import com.example.booksservice.exceptions.UserNotFoundException;
 import com.example.booksservice.repository.BooksRepository;
+import com.example.booksservice.repository.FileRepository;
 import com.mongodb.client.gridfs.model.GridFSFile;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.springframework.data.mongodb.core.query.Query;
@@ -25,27 +30,65 @@ public class BookService {
 
     private final BooksRepository booksRepository;
 
+    private final FileRepository fileRepository;
     private final UserServiceClient userServiceClient;
 
     private final GridFsTemplate gridFsTemplate;
 
-    public BookService(BooksRepository booksRepository, UserServiceClient userServiceClient, GridFsTemplate gridFsTemplate) {
+    private final AuthenticationServiceClient authenticationServiceClient;
+
+    public BookService(BooksRepository booksRepository, FileRepository fileRepository, UserServiceClient userServiceClient, GridFsTemplate gridFsTemplate, AuthenticationServiceClient authenticationServiceClient) {
         this.booksRepository = booksRepository;
+        this.fileRepository = fileRepository;
         this.userServiceClient = userServiceClient;
         this.gridFsTemplate = gridFsTemplate;
+        this.authenticationServiceClient = authenticationServiceClient;
     }
 
-    public Optional<Book> getBookDetails(String bookId) {
+    public Optional<Book> getBookById(Long bookId, String token) {
+        if (!authenticationServiceClient.validateToken(token)) {
+            throw new RuntimeException("Access denied: No access to book");
+        }
         return booksRepository.findById(bookId);
     }
 
-    @CircuitBreaker(name = "User-service", fallbackMethod = "fallbackGetUser")
-    public Optional<User> getUserDetails(Long id) {
-        return userServiceClient.getUserById(id);
+    @CircuitBreaker(name = "books-service", fallbackMethod = "fallbackGetBooksByUserId")
+    public Optional<Book> getBooksByUserId(Long id, String token) {
+        if (!authenticationServiceClient.validateToken(token)) {
+            throw new RuntimeException("Access denied: No access to book by userId");
+        }
+        Optional<User> userOptional = userServiceClient.getUserById(id, token);
+        if (userOptional.isEmpty()) {
+            throw new UserNotFoundException();
+        }
+        User user = userOptional.get();
+        Long bookId = user.getBookId();
+        if (bookId == null) {
+            return Optional.empty();
+        }
+        Optional<Book> book = booksRepository.findById(bookId);
+        if (book.isEmpty()) {
+            throw new BookNotFoundException();
+        }
+        return book;
     }
 
-    public Optional<User> fallbackGetUser(Long id, Throwable throwable) {
-        System.err.println("Error getting user with id " + id + ": " + throwable.getMessage());
+    public List<Book> searchBooks(String title, String author, String token) {
+        if (!authenticationServiceClient.validateToken(token)) {
+            throw new RuntimeException("Access denied: No access to search books");
+        }
+        return booksRepository.findBooksByTitleAndAuthor(title, author);
+    }
+
+    public List<Book> getBooksByGenre(String genre, String token) {
+        if (!authenticationServiceClient.validateToken(token)) {
+            throw new RuntimeException("Access denied: No access to search of books by genre");
+        }
+        return booksRepository.findBooksByGenre(genre);
+    }
+
+    public Optional<Book> fallbackGetBooksByUserId(Long id, String token, Throwable throwable) {
+        System.err.println("Error getting book by userId " + id + ": " + throwable.getMessage());
         return Optional.empty();
     }
 
@@ -53,21 +96,62 @@ public class BookService {
         return booksRepository.findAll();
     }
 
-    public void update(Book book) {
+    public void update(Book book, Long id, String token) {
+        if (!authenticationServiceClient.validateToken(token)) {
+            throw new RuntimeException("Access denied: No access to update book");
+        }
+        Optional<User> userById = userServiceClient.getUserById(id, token);
+        if (userById.isPresent()) {
+            User user = userById.get();
+            book.setUserId(user.getId());
+        } else {
+            throw new UserNotFoundException();
+        }
+        book.setId(book.getId());
+        book.setAuthor(book.getAuthor());
+        book.setDescription(book.getDescription());
+        book.setGenre(book.getGenre());
+        book.setPublisher(book.getPublisher());
+        book.setTitle(book.getTitle());
+        book.setFileId(book.getFileId());
+        book.setImageId(book.getImageId());
         booksRepository.save(book);
     }
 
-    public void delete(String id) {
+    public void delete(Long id) {
         booksRepository.deleteById(id);
     }
 
-    public Book addBookWithImage(Book book, MultipartFile image) throws IOException {
+    public void addBookWithImage(Book book, MultipartFile image, Long id, String token) throws IOException {
+        if (!authenticationServiceClient.validateToken(token)) {
+            throw new RuntimeException("Access denied: No access to add book with image");
+        }
+        Optional<User> userOptional = userServiceClient.getUserById(id, token);
+        if (userOptional.isEmpty()) {
+            throw new UserNotFoundException();
+        }
+        User user = userOptional.get();
+        book.setUserId(user.getId());
         ObjectId imageId = gridFsTemplate.store(image.getInputStream(), image.getOriginalFilename(), image.getContentType());
         book.setImageId(imageId);
-        return booksRepository.save(book);
+        book.setFileId(imageId.toString());
+        booksRepository.save(book);
+        user.setBookId(book.getId());
+        userServiceClient.updateUser(user, id, token);
     }
 
-    public Optional<Book> getBookWithImage(String bookId) {
+    public byte[] getFile(String fileId, String token) {
+        if (!authenticationServiceClient.validateToken(token)) {
+            throw new RuntimeException("Access denied: No access to get book with image");
+        }
+        File file = fileRepository.findById(fileId).orElse(null);
+        return (file != null) ? file.getData() : null;
+    }
+
+    public Optional<Book> getBookWithImage(Long bookId, String token) {
+        if (!authenticationServiceClient.validateToken(token)) {
+            throw new RuntimeException("Access denied: No access to get book with image");
+        }
         return booksRepository.findById(bookId);
     }
 

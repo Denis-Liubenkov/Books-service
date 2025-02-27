@@ -15,6 +15,9 @@ spring:
         enabled: true
   config:
     import: 'optional:configserver:'
+  jpa:
+    hibernate:
+      ddl-auto: update
 resilience4j:
   circuit-breaker:
     instances:

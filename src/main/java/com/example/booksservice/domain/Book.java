@@ -1,20 +1,24 @@
 package com.example.booksservice.domain;
 
+import jakarta.persistence.*;
 import lombok.Data;
 import org.bson.types.ObjectId;
-import org.springframework.data.mongodb.core.mapping.Document;
 
-@Document(collection = "Books")
+@Entity
 @Data
+@Table(name = "books")
 public class Book {
-    private String id;
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
     private String author;
     private String genre;
     private String publisher;
     private String title;
     private String description;
+    private String fileId;
     private ObjectId imageId;
-    private Integer userId;
+    private Long userId;
 }
 
 
