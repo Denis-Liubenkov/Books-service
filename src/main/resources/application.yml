@@ -9,13 +9,14 @@ spring:
         enabled: true
         service-id: config-server
     consul:
-      host: localhost
-      port: 8500
+      host: ${CONSUL_HOST:consul}
+      port: ${CONSUL_PORT:8500}
       discovery:
         enabled: true
   config:
     import: 'optional:configserver:'
   jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
     hibernate:
       ddl-auto: update
 resilience4j:
